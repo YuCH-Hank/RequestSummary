@@ -1,0 +1,194 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <title>廠區各點風量標示工具</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>廠區各點風量標示工具</h1>
+      <div class="toolbar">
+        <label class="file-label">
+          載入底圖：
+          <input type="file" id="imageInput" accept="image/*" />
+        </label>
+        <button id="pasteHintBtn" type="button">從剪貼簿貼上 (Ctrl+V)</button>
+        <button id="exportBtn" type="button">匯出專案（drawio.json）</button>
+        <button id="exportImageBtn" type="button">匯出圖檔（PNG）</button>
+        <label class="file-label">
+          匯入專案：
+          <input type="file" id="importInput" accept=".json" />
+        </label>
+      </div>
+    </header>
+
+    <main>
+      <section id="canvasArea">
+        <div id="imageWrapper">
+          <img id="backgroundImage" alt="請先載入底圖" />
+          <div id="pointsLayer" class="points-layer"></div>
+          <div id="totalsWidget" class="totals-widget"></div>
+        </div>
+        <div class="hint">
+          於空白處<b>按右鍵</b>可新增點位<br />
+          在點位上<b>按住右鍵拖曳</b>可移動位置<br />
+          點擊點位後按 <b>Delete</b> 可刪除<br />
+          點位標籤依序顯示酸 / 鹼 / 有機 / 熱 / 集塵
+        </div>
+      </section>
+
+      <section id="sidePanel">
+        <div class="panel">
+          <h2>點位屬性 <span id="selectedPointInfo">尚未選取點位</span></h2>
+          <div class="field-group">
+            <label for="pointId">點位編號</label>
+            <input id="pointId" />
+          </div>
+          <div class="field-group">
+            <label for="flowDirection">風量排列</label>
+            <select id="flowDirection">
+              <option value="row">左右排列</option>
+              <option value="column">上下排列</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label for="acid">酸風量</label>
+            <input id="acid" type="number" min="0" step="1" />
+          </div>
+          <div class="field-group">
+            <label for="base">鹼風量</label>
+            <input id="base" type="number" min="0" step="1" />
+          </div>
+          <div class="field-group">
+            <label for="voc">VOC</label>
+            <input id="voc" type="number" min="0" step="1" />
+          </div>
+          <div class="field-group">
+            <label for="heat">熱風量</label>
+            <input id="heat" type="number" min="0" step="1" />
+          </div>
+          <div class="field-group">
+            <label for="dust">粉塵風量</label>
+            <input id="dust" type="number" min="0" step="1" />
+          </div>
+          <div class="field-group">
+            <label for="machines">機台數</label>
+            <input id="machines" type="number" min="0" step="1" />
+          </div>
+
+          <div class="button-row">
+            <button id="newEmptyPointBtn" type="button">
+              於中心新增空白點位
+            </button>
+            <button id="deletePointBtn" type="button" class="danger">
+              刪除點位
+            </button>
+          </div>
+          <div class="small-note">
+            圖面上只會顯示已填寫的風量種類；點位編號留空時顯示流水號。<br />
+            點擊點位後按 Delete 也能刪除。
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>點位清單 <span>點擊可快速選取</span></h2>
+          <div id="pointsList">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>酸</th>
+                  <th>鹼</th>
+                  <th>有機</th>
+                  <th>熱</th>
+                  <th>集塵</th>
+                  <th>機台數量</th>
+                </tr>
+              </thead>
+              <tbody id="pointsListBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>風量統計表</h2>
+          <table>
+            <thead>
+              <tr>
+                <th rowspan="2">編號</th>
+                <th colspan="5">單台廢氣量</th>
+                <th rowspan="2">機台</th>
+                <th colspan="5">總廢氣量</th>
+              </tr>
+              <tr>
+                <th>酸</th>
+                <th>鹼</th>
+                <th>有機</th>
+                <th>熱</th>
+                <th>集塵</th>
+                <th>酸</th>
+                <th>鹼</th>
+                <th>有機</th>
+                <th>熱</th>
+                <th>集塵</th>
+              </tr>
+            </thead>
+            <tbody id="summaryBody"></tbody>
+          </table>
+          <div class="small-note" style="margin-top: 4px">
+            總廢氣量 = 單台廢氣量 × 機台數。<br />
+            表格下方「總計」為全場各類別累加值。
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>顯示設定</h2>
+          <div class="opacity-row">
+            <span>底圖透明度</span>
+            <input
+              type="range"
+              id="opacitySlider"
+              min="20"
+              max="100"
+              value="100"
+            />
+            <span id="opacityValue">100%</span>
+          </div>
+          <div class="opacity-row">
+            <span>點位透明度</span>
+            <input
+              type="range"
+              id="pointOpacitySlider"
+              min="10"
+              max="100"
+              value="50"
+            />
+            <span id="pointOpacityValue">50%</span>
+          </div>
+          <div class="opacity-row" style="margin-top: 6px">
+            <span>點位大小</span>
+            <input
+              type="range"
+              id="pointSizeSlider"
+              min="16"
+              max="36"
+              value="22"
+            />
+            <span id="pointSizeValue">22px</span>
+          </div>
+          <div class="small-note" style="margin-top: 6px">
+            可視需求調整透明度，方便檢視點位文字。
+          </div>
+          <div class="small-note" style="margin-top: 6px">
+            匯出 / 匯入使用本工具定義的 JSON（副檔名
+            .drawio.json），可再次載入編輯。
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="src/function.js"></script>
+    <script src="src/ui.js"></script>
+  </body>
+</html>
