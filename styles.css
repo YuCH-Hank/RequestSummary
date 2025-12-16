@@ -1,4 +1,10 @@
-﻿* {
+﻿:root {
+  --flow-scale: 1;
+  --ui-scale: 1;
+  --totals-scale: 1;
+}
+
+* {
   box-sizing: border-box;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -74,7 +80,7 @@ main {
 }
 
 #canvasArea {
-  background: #e5e7eb;
+  background: #fff;
   border-radius: 6px;
   padding: 8px;
   display: flex;
@@ -86,10 +92,7 @@ main {
   position: relative;
   flex: 1;
   overflow: auto;
-  background: repeating-conic-gradient(
-    #f9fafb 0deg 90deg,
-    #e5e7eb 90deg 180deg
-  );
+  background: #fff;
   border-radius: 4px;
   border: 1px solid #cbd5e1;
 }
@@ -107,6 +110,26 @@ main {
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+.text-box {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.8);
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: #111;
+  font-size: 16px;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  cursor: move;
+  pointer-events: auto;
+  white-space: pre-wrap;
+  max-width: 260px;
+}
+
+.text-box.selected {
+  outline: 2px solid #2563eb;
 }
 
 .point {
@@ -135,8 +158,8 @@ main {
 .flow-label {
   position: absolute;
   transform: translate(-50%, -50%);
-  margin-top: 20px;
-  padding: 2px 6px;
+  margin-top: calc(20px * var(--flow-scale));
+  padding: calc(2px * var(--flow-scale)) calc(6px * var(--flow-scale));
   border-radius: 4px;
   background: transparent;
   color: #111827;
@@ -148,7 +171,7 @@ main {
   text-overflow: ellipsis;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: calc(4px * var(--flow-scale));
   align-items: center;
   justify-content: flex-start;
   opacity: 1;
@@ -157,7 +180,7 @@ main {
 .flow-chip {
   font-weight: 600;
   margin-right: 0;
-  padding: 1px 6px;
+  padding: calc(1px * var(--flow-scale)) calc(6px * var(--flow-scale));
   border-radius: 4px;
   color: #000;
   opacity: 1;
@@ -188,45 +211,47 @@ main {
 .flow-label-column {
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  gap: calc(2px * var(--flow-scale));
   justify-content: flex-start;
   transform: translate(-50%, 0);
-  margin-top: 8px;
+  margin-top: calc(16px * var(--flow-scale));
   top: auto;
 }
 
 .totals-widget {
   position: absolute;
-  min-width: 120px;
+  min-width: calc(120px * var(--totals-scale));
   background: rgba(255, 255, 255, 0.88);
   border: 1px solid #d1d5db;
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: calc(8px * var(--totals-scale)) calc(10px * var(--totals-scale));
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
   cursor: move;
   user-select: none;
-  font-size: 12px;
+  font-size: calc(12px * var(--totals-scale));
   color: #111827;
   pointer-events: auto;
   z-index: 5;
+  transform-origin: top left;
+  transform: scale(var(--totals-scale));
 }
 
 .totals-title {
   font-weight: 700;
-  margin-bottom: 6px;
+  margin-bottom: calc(6px * var(--totals-scale));
 }
 
 .totals-row {
   line-height: 1.5;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: calc(6px * var(--totals-scale));
 }
 
 .totals-note {
-  font-size: 10px;
+  font-size: calc(10px * var(--totals-scale));
   color: #6b7280;
-  margin-top: 4px;
+  margin-top: calc(4px * var(--totals-scale));
 }
 
 .hint {
@@ -404,3 +429,8 @@ input[type="number"] {
     grid-template-rows: minmax(250px, 1.5fr) minmax(0, 1.2fr);
   }
 }
+
+
+
+
+

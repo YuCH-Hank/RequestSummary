@@ -15,7 +15,7 @@
         </label>
         <button id="pasteHintBtn" type="button">從剪貼簿貼上 (Ctrl+V)</button>
         <button id="exportBtn" type="button">匯出專案（drawio.json）</button>
-        <button id="exportImageBtn" type="button">匯出圖檔（PNG）</button>
+        <button id="exportImageBtn" type="button">匯出圖檔（JPG）</button>
         <label class="file-label">
           匯入專案：
           <input type="file" id="importInput" accept=".json" />
@@ -54,27 +54,27 @@
           </div>
           <div class="field-group">
             <label for="acid">酸風量</label>
-            <input id="acid" type="number" min="0" step="1" />
+            <input id="acid" type="text" inputmode="decimal" placeholder="可輸入小數" />
           </div>
           <div class="field-group">
             <label for="base">鹼風量</label>
-            <input id="base" type="number" min="0" step="1" />
+            <input id="base" type="text" inputmode="decimal" placeholder="可輸入小數" />
           </div>
           <div class="field-group">
             <label for="voc">VOC</label>
-            <input id="voc" type="number" min="0" step="1" />
+            <input id="voc" type="text" inputmode="decimal" placeholder="可輸入小數" />
           </div>
           <div class="field-group">
             <label for="heat">熱風量</label>
-            <input id="heat" type="number" min="0" step="1" />
+            <input id="heat" type="text" inputmode="decimal" placeholder="可輸入小數" />
           </div>
           <div class="field-group">
             <label for="dust">粉塵風量</label>
-            <input id="dust" type="number" min="0" step="1" />
+            <input id="dust" type="text" inputmode="decimal" placeholder="可輸入小數" />
           </div>
           <div class="field-group">
             <label for="machines">機台數</label>
-            <input id="machines" type="number" min="0" step="1" />
+            <input id="machines" type="text" inputmode="decimal" placeholder="可輸入小數" />
           </div>
 
           <div class="button-row">
@@ -113,6 +113,12 @@
 
         <div class="panel">
           <h2>風量統計表</h2>
+          <div class="small-note" style="margin: -6px 0 6px 0">
+            <label>
+              <input type="checkbox" id="summarySortToggle" />
+              依編號排序
+            </label>
+          </div>
           <table>
             <thead>
               <tr>
@@ -143,6 +149,41 @@
         </div>
 
         <div class="panel">
+          <h2>文字方塊</h2>
+          <div class="button-row" style="margin-bottom: 8px">
+            <button id="addTextBoxBtn" type="button">新增文字方塊</button>
+            <button id="deleteTextBoxBtn" type="button" class="danger">
+              刪除選取
+            </button>
+          </div>
+          <div class="field-group">
+            <label for="textContent">文字內容</label>
+            <textarea id="textContent" rows="3" placeholder="輸入文字"></textarea>
+          </div>
+          <div class="field-group">
+            <label for="textColor">文字顏色</label>
+            <input id="textColor" type="color" value="#111111" />
+          </div>
+          <div class="field-group">
+            <label for="textSize">文字大小 (px)</label>
+            <input id="textSize" type="number" min="8" max="48" value="16" />
+          </div>
+          <div id="textList">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>文字</th>
+                  <th>顏色</th>
+                  <th>大小</th>
+                </tr>
+              </thead>
+              <tbody id="textListBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
           <h2>顯示設定</h2>
           <div class="opacity-row">
             <span>底圖透明度</span>
@@ -151,9 +192,9 @@
               id="opacitySlider"
               min="20"
               max="100"
-              value="100"
+              value="70"
             />
-            <span id="opacityValue">100%</span>
+            <span id="opacityValue">70%</span>
           </div>
           <div class="opacity-row">
             <span>點位透明度</span>
@@ -162,9 +203,9 @@
               id="pointOpacitySlider"
               min="10"
               max="100"
-              value="50"
+              value="90"
             />
-            <span id="pointOpacityValue">50%</span>
+            <span id="pointOpacityValue">90%</span>
           </div>
           <div class="opacity-row" style="margin-top: 6px">
             <span>點位大小</span>
@@ -176,6 +217,18 @@
               value="22"
             />
             <span id="pointSizeValue">22px</span>
+          </div>
+          <div class="opacity-row" style="margin-top: 6px">
+            <span>小數位數</span>
+            <input
+              type="number"
+              id="decimalPlacesInput"
+              min="0"
+              max="3"
+              value="1"
+              style="width: 56px"
+            />
+            <span id="decimalPlacesValue">1 位</span>
           </div>
           <div class="small-note" style="margin-top: 6px">
             可視需求調整透明度，方便檢視點位文字。

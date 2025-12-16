@@ -7,10 +7,13 @@
     readBlobAsDataUrl,
     applyPointSize,
     getSelectedPoint,
+    createTextBox,
   } = window.App;
 
   let selectedPointId = null;
   let draggingPointId = null;
+  let selectedTextId = null;
+  let draggingTextId = null;
 
   /** 集中 DOM 快取，方便查找。 */
   const dom = {
@@ -35,12 +38,21 @@
     newEmptyPointBtn: document.getElementById("newEmptyPointBtn"),
     pointsListBody: document.getElementById("pointsListBody"),
     summaryBody: document.getElementById("summaryBody"),
+    summarySortToggle: document.getElementById("summarySortToggle"),
+    addTextBoxBtn: document.getElementById("addTextBoxBtn"),
+    deleteTextBoxBtn: document.getElementById("deleteTextBoxBtn"),
+    textContent: document.getElementById("textContent"),
+    textColor: document.getElementById("textColor"),
+    textSize: document.getElementById("textSize"),
+    textListBody: document.getElementById("textListBody"),
     opacitySlider: document.getElementById("opacitySlider"),
     opacityValue: document.getElementById("opacityValue"),
     pointSizeSlider: document.getElementById("pointSizeSlider"),
     pointSizeValue: document.getElementById("pointSizeValue"),
     pointOpacitySlider: document.getElementById("pointOpacitySlider"),
     pointOpacityValue: document.getElementById("pointOpacityValue"),
+    decimalPlacesInput: document.getElementById("decimalPlacesInput"),
+    decimalPlacesValue: document.getElementById("decimalPlacesValue"),
     totalsWidget: document.getElementById("totalsWidget"),
   };
 
@@ -57,6 +69,9 @@
     bindOpacityControl();
     bindPointSizeControl();
     bindPointOpacityControl();
+    bindDecimalPlacesControl();
+    bindSummarySortControl();
+    bindTextBoxControls();
     bindPersistence();
     dom.pointSizeSlider.value = state.pointSize;
     dom.pointSizeValue.textContent = `${state.pointSize}px`;
@@ -66,6 +81,14 @@
     dom.pointOpacityValue.textContent = `${Math.round(
       state.pointOpacity * 100
     )}%`;
+    if (dom.decimalPlacesInput && dom.decimalPlacesValue) {
+      dom.decimalPlacesInput.value = state.decimalPlaces;
+      dom.decimalPlacesValue.textContent = `${state.decimalPlaces} 位`;
+    }
+    if (dom.summarySortToggle) {
+      dom.summarySortToggle.checked = !!state.summarySortById;
+    }
+    dom.backgroundImage.style.opacity = state.opacity;
     applyPointSize();
     renderAll();
   }
@@ -76,13 +99,7 @@
       const file = e.target.files[0];
       if (!file) return;
       readBlobAsDataUrl(file, (dataUrl) => {
-        setBackgroundDataUrl(dataUrl);
-        dom.backgroundImage.src = dataUrl;
-        dom.backgroundImage.onload = () => {
-          state.imageWidth = dom.backgroundImage.naturalWidth;
-          state.imageHeight = dom.backgroundImage.naturalHeight;
-          renderAll();
-        };
+        loadBackgroundFromDataUrl(dataUrl);
       });
     });
   }
@@ -91,17 +108,31 @@
   function bindPasteSupport() {
     window.addEventListener("paste", (e) => {
       const items = e.clipboardData && e.clipboardData.items;
-      if (!items) return;
-      for (const item of items) {
-        if (item.type.indexOf("image") === -1) continue;
-        const blob = item.getAsFile();
-        if (!blob) return;
-        readBlobAsDataUrl(blob, (dataUrl) => {
-          setBackgroundDataUrl(dataUrl);
-          dom.backgroundImage.src = dataUrl;
-        });
+      const files = e.clipboardData && e.clipboardData.files;
+      let handled = false;
+      if (items && items.length) {
+        for (const item of items) {
+          if (!item.type || item.type.indexOf("image") === -1) continue;
+          const blob = item.getAsFile();
+          if (!blob) continue;
+          readBlobAsDataUrl(blob, (dataUrl) => {
+            loadBackgroundFromDataUrl(dataUrl);
+          });
+          handled = true;
+          break;
+        }
+      }
+      if (!handled && files && files.length) {
+        const file = files[0];
+        if (file.type && file.type.indexOf("image") !== -1) {
+          readBlobAsDataUrl(file, (dataUrl) => {
+            loadBackgroundFromDataUrl(dataUrl);
+          });
+          handled = true;
+        }
+      }
+      if (handled) {
         e.preventDefault();
-        return;
       }
     });
 
@@ -118,7 +149,7 @@
         alert("請先載入底圖再新增點位。");
         return;
       }
-      const rect = dom.imageWrapper.getBoundingClientRect();
+      const rect = dom.backgroundImage.getBoundingClientRect();
       const xPercent = (e.clientX - rect.left) / rect.width;
       const yPercent = (e.clientY - rect.top) / rect.height;
       const newPoint = createPoint({
@@ -129,24 +160,37 @@
       selectedPointId = newPoint.uid;
       renderAll();
       scrollToPoint(newPoint.uid);
+      focusPointIdInput();
     });
 
     dom.imageWrapper.addEventListener("mousemove", (e) => {
-      if (!draggingPointId) return;
       if (!(e.buttons & 2) && !(e.buttons & 1)) return;
-      const p = state.points.find((pt) => pt.uid === draggingPointId);
-      if (!p) return;
-      const rect = dom.imageWrapper.getBoundingClientRect();
+      const rect = dom.backgroundImage.getBoundingClientRect();
       const xPercent = (e.clientX - rect.left) / rect.width;
       const yPercent = (e.clientY - rect.top) / rect.height;
-      p.x = clamp(xPercent, 0, 1);
-      p.y = clamp(yPercent, 0, 1);
-      renderPoints();
+      if (draggingPointId) {
+        const p = state.points.find((pt) => pt.uid === draggingPointId);
+        if (!p) return;
+        p.x = clamp(xPercent, 0, 1);
+        p.y = clamp(yPercent, 0, 1);
+        renderPoints();
+      }
+      if (draggingTextId) {
+        const t = state.textBoxes.find((tb) => tb.uid === draggingTextId);
+        if (!t) return;
+        t.x = clamp(xPercent, 0, 1);
+        t.y = clamp(yPercent, 0, 1);
+        renderTextBoxes();
+      }
     });
 
     window.addEventListener("mouseup", (e) => {
       if ((e.button === 2 || e.button === 0) && draggingPointId) {
         draggingPointId = null;
+        renderAll();
+      }
+      if ((e.button === 2 || e.button === 0) && draggingTextId) {
+        draggingTextId = null;
         renderAll();
       }
     });
@@ -208,6 +252,83 @@
     });
   }
 
+  /** 小數位數設定。 */
+  function bindDecimalPlacesControl() {
+    if (!dom.decimalPlacesInput) return;
+    dom.decimalPlacesInput.addEventListener("input", () => {
+      const v = Number(dom.decimalPlacesInput.value);
+      const clamped = Math.max(0, Math.min(3, Math.round(v)));
+      state.decimalPlaces = Number.isNaN(clamped) ? 1 : clamped;
+      dom.decimalPlacesInput.value = state.decimalPlaces;
+      if (dom.decimalPlacesValue) {
+        dom.decimalPlacesValue.textContent = `${state.decimalPlaces} 位`;
+      }
+      renderAll();
+    });
+  }
+
+  /** 統計表排序選項。 */
+  function bindSummarySortControl() {
+    if (!dom.summarySortToggle) return;
+    dom.summarySortToggle.addEventListener("change", () => {
+      state.summarySortById = dom.summarySortToggle.checked;
+      renderAll();
+    });
+  }
+
+  /** 文字方塊相關控制。 */
+  function bindTextBoxControls() {
+    if (dom.addTextBoxBtn) {
+      dom.addTextBoxBtn.addEventListener("click", () => {
+        const tb = createTextBox();
+        state.textBoxes.push(tb);
+        selectedTextId = tb.uid;
+        renderAfterFieldChange();
+        renderTextBoxPanel();
+      });
+    }
+    if (dom.deleteTextBoxBtn) {
+      dom.deleteTextBoxBtn.addEventListener("click", () => {
+        if (!selectedTextId) return;
+        const idx = state.textBoxes.findIndex((t) => t.uid === selectedTextId);
+        if (idx !== -1) {
+          state.textBoxes.splice(idx, 1);
+          selectedTextId = null;
+          renderAfterFieldChange();
+          renderTextBoxPanel();
+        }
+      });
+    }
+    if (dom.textContent) {
+      dom.textContent.addEventListener("input", () => {
+        const t = state.textBoxes.find((tb) => tb.uid === selectedTextId);
+        if (!t) return;
+        t.text = dom.textContent.value;
+        renderTextBoxes();
+        renderTextList();
+      });
+    }
+    if (dom.textColor) {
+      dom.textColor.addEventListener("input", () => {
+        const t = state.textBoxes.find((tb) => tb.uid === selectedTextId);
+        if (!t) return;
+        t.color = dom.textColor.value;
+        renderTextBoxes();
+        renderTextList();
+      });
+    }
+    if (dom.textSize) {
+      dom.textSize.addEventListener("input", () => {
+        const t = state.textBoxes.find((tb) => tb.uid === selectedTextId);
+        if (!t) return;
+        const v = Number(dom.textSize.value);
+        t.fontSize = Number.isNaN(v) ? 16 : v;
+        renderTextBoxes();
+        renderTextList();
+      });
+    }
+  }
+
   /** 點位大小滑桿。 */
   function bindPointSizeControl() {
     dom.pointSizeSlider.addEventListener("input", () => {
@@ -219,7 +340,7 @@
     });
   }
 
-  /** 匯出/匯入 JSON 與匯出 PNG。 */
+  /** 匯出/匯入 JSON 與匯出 JPG。 */
   function bindPersistence() {
     dom.exportBtn.addEventListener("click", () => {
       if (!state.backgroundDataUrl) {
@@ -246,17 +367,35 @@
       reader.onload = (ev) => {
         try {
           const loaded = JSON.parse(ev.target.result);
-          if (!loaded || !Array.isArray(loaded.points)) {
-            throw new Error("檔案格式不正確");
-          }
+      if (!loaded || !Array.isArray(loaded.points)) {
+        throw new Error("檔案格式不正確");
+      }
           state.backgroundDataUrl = loaded.backgroundDataUrl || null;
-          state.opacity =
-            typeof loaded.opacity === "number" ? loaded.opacity : 1;
-          state.pointSize =
-            typeof loaded.pointSize === "number" ? loaded.pointSize : 22;
+      state.opacity =
+        typeof loaded.opacity === "number" ? loaded.opacity : 1;
+      state.pointSize =
+        typeof loaded.pointSize === "number" ? loaded.pointSize : 22;
           state.pointOpacity =
             typeof loaded.pointOpacity === "number" ? loaded.pointOpacity : 0.5;
           state.totalsPosition = loaded.totalsPosition || { x: 0.02, y: 0.7 };
+          state.summarySortById = !!loaded.summarySortById;
+          state.decimalPlaces =
+            typeof loaded.decimalPlaces === "number"
+              ? Math.max(0, Math.min(3, Math.round(loaded.decimalPlaces)))
+              : 1;
+          state.textBoxes = Array.isArray(loaded.textBoxes)
+            ? loaded.textBoxes.map((t) =>
+                createTextBox({
+                  uid:
+                    t.uid || Date.now() + "-" + Math.random().toString(16).slice(2),
+                  text: t.text || "",
+                  x: typeof t.x === "number" ? t.x : 0.5,
+                  y: typeof t.y === "number" ? t.y : 0.5,
+                  color: t.color || "#111111",
+                  fontSize: t.fontSize || 16,
+                })
+              )
+            : [];
           state.imageWidth = loaded.imageWidth || null;
           state.imageHeight = loaded.imageHeight || null;
           state.points = loaded.points.map((p) =>
@@ -309,20 +448,62 @@
     renderPoints();
     renderSelectedPointPanel();
     renderPointsList();
+    renderTextBoxes();
+    renderTextBoxPanel();
+    renderTextList();
     renderTotalsWidget(totals);
+  }
+
+  /** 更新其他區塊而不重建正在輸入的欄位，避免游標跳動。 */
+  function renderAfterFieldChange() {
+    const totals = renderSummary();
+    renderPoints();
+    renderPointsList();
+    renderTextBoxes();
+    renderTextBoxPanel();
+    renderTextList();
+    renderTotalsWidget(totals);
+  }
+
+  /** 將畫布容器大小調整為影像實際呈現尺寸，避免偏移。 */
+  function updateCanvasSizeStyles() {
+    const imgRect = dom.backgroundImage.getBoundingClientRect();
+    if (!imgRect.width || !imgRect.height) return;
+    dom.pointsLayer.style.width = imgRect.width + "px";
+    dom.pointsLayer.style.height = imgRect.height + "px";
+  }
+
+  /** 依 DataURL 套用底圖並同步尺寸。 */
+  function loadBackgroundFromDataUrl(dataUrl) {
+    setBackgroundDataUrl(dataUrl);
+    dom.backgroundImage.src = dataUrl;
+    dom.backgroundImage.style.opacity = state.opacity;
+    dom.backgroundImage.onload = () => {
+      state.imageWidth = dom.backgroundImage.naturalWidth;
+      state.imageHeight = dom.backgroundImage.naturalHeight;
+      renderAll();
+      updateCanvasSizeStyles();
+    };
+    // 圖片可能已經在快取，立即更新尺寸以避免偏移
+    updateCanvasSizeStyles();
   }
 
   /** 在畫布渲染點位與風量標籤。 */
   function renderPoints() {
+    const imgRect = dom.backgroundImage.getBoundingClientRect();
+    const imgWidth = imgRect.width || 1;
+    const imgHeight = imgRect.height || 1;
+    dom.pointsLayer.style.width = imgWidth + "px";
+    dom.pointsLayer.style.height = imgHeight + "px";
     dom.pointsLayer.innerHTML = "";
     state.points.forEach((p, idx) => {
-      const x = p.x * 100;
-      const y = p.y * 100;
+      const xPx = p.x * imgWidth;
+      const yPx = p.y * imgHeight;
       const pointDiv = document.createElement("div");
       pointDiv.className = "point";
       if (p.uid === selectedPointId) pointDiv.classList.add("selected");
-      pointDiv.style.left = x + "%";
-      pointDiv.style.top = y + "%";
+      pointDiv.style.left = xPx + "px";
+      pointDiv.style.top = yPx + "px";
       pointDiv.style.opacity = state.pointOpacity;
       pointDiv.textContent = p.id || idx + 1;
       pointDiv.addEventListener("click", (e) => {
@@ -351,13 +532,49 @@
         if (p.flowDirection === "column") {
           labelDiv.classList.add("flow-label-column");
         }
-        labelDiv.style.left = x + "%";
-        labelDiv.style.top = y + "%";
+        labelDiv.style.left = xPx + "px";
+        labelDiv.style.top = yPx + "px";
         labelDiv.style.opacity = state.pointOpacity;
         labelDiv.innerHTML = labelHtml;
         dom.pointsLayer.appendChild(labelDiv);
       }
       dom.pointsLayer.appendChild(pointDiv);
+    });
+  }
+
+  /** 渲染文字方塊。 */
+  function renderTextBoxes() {
+    const imgRect = dom.backgroundImage.getBoundingClientRect();
+    const imgWidth = imgRect.width || 1;
+    const imgHeight = imgRect.height || 1;
+    const existing = dom.pointsLayer.querySelectorAll(".text-box");
+    existing.forEach((n) => n.remove());
+    state.textBoxes.forEach((t, idx) => {
+      const xPx = t.x * imgWidth;
+      const yPx = t.y * imgHeight;
+      const div = document.createElement("div");
+      div.className = "text-box";
+      if (t.uid === selectedTextId) div.classList.add("selected");
+      div.style.left = xPx + "px";
+      div.style.top = yPx + "px";
+      div.style.color = t.color || "#111";
+      div.style.fontSize = `${t.fontSize || 16}px`;
+      div.textContent = t.text || `文字${idx + 1}`;
+      div.addEventListener("mousedown", (e) => {
+        if (e.button === 0 || e.button === 2) {
+          e.preventDefault();
+          draggingTextId = t.uid;
+          selectedTextId = t.uid;
+          renderTextBoxPanel();
+        }
+      });
+      div.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectedTextId = t.uid;
+        renderTextBoxPanel();
+        renderTextList();
+      });
+      dom.pointsLayer.appendChild(div);
     });
   }
 
@@ -389,8 +606,10 @@
     const machines = Number(machineText.replace("×", "")) || 1;
     const showTotal = machines > 1;
     const total = showTotal ? num * machines : num;
-    return `<span class="flow-chip ${cls}">${num}${
-      showTotal ? `×${machines}台=${total}` : ""
+    const numText = formatOneDecimal(num, false, true);
+    const totalText = formatOneDecimal(total, false, true);
+    return `<span class="flow-chip ${cls}">${numText}${
+      showTotal ? `×${machines}台=${totalText}` : ""
     }</span>`;
   }
 
@@ -421,6 +640,21 @@
     dom.machinesInput.value = p.machines || 1;
   }
 
+  /** 渲染文字方塊編輯面板。 */
+  function renderTextBoxPanel() {
+    if (!dom.textContent) return;
+    const t = state.textBoxes.find((tb) => tb.uid === selectedTextId);
+    if (!t) {
+      dom.textContent.value = "";
+      if (dom.textColor) dom.textColor.value = "#111111";
+      if (dom.textSize) dom.textSize.value = "16";
+      return;
+    }
+    dom.textContent.value = t.text || "";
+    if (dom.textColor) dom.textColor.value = t.color || "#111111";
+    if (dom.textSize) dom.textSize.value = t.fontSize || 16;
+  }
+
   /** 將輸入框綁定到選取點位的欄位。 */
   function bindInputToField(inputEl, field) {
     inputEl.addEventListener("input", () => {
@@ -429,15 +663,9 @@
       if (field === "id") {
         p.id = inputEl.value.trim();
       } else {
-        const v =
-          inputEl.value === ""
-            ? field === "machines"
-              ? 1
-              : 0
-            : Number(inputEl.value);
-        p[field] = Number.isNaN(v) ? 0 : v;
+        p[field] = inputEl.value;
       }
-      renderAll();
+      renderAfterFieldChange();
     });
   }
 
@@ -447,7 +675,7 @@
       const p = getSelectedPoint(selectedPointId);
       if (!p) return;
       p[field] = selectEl.value;
-      renderAll();
+      renderAfterFieldChange();
     });
   }
 
@@ -481,51 +709,114 @@
     });
   }
 
+  /** 渲染文字方塊清單。 */
+  function renderTextList() {
+    if (!dom.textListBody) return;
+    dom.textListBody.innerHTML = "";
+    state.textBoxes.forEach((t, idx) => {
+      const tr = document.createElement("tr");
+      if (t.uid === selectedTextId) tr.classList.add("active");
+      const cells = [
+        idx + 1,
+        t.text || "",
+        t.color || "",
+        t.fontSize || "",
+      ];
+      cells.forEach((c) => {
+        const td = document.createElement("td");
+        td.textContent = c;
+        tr.appendChild(td);
+      });
+      tr.addEventListener("click", () => {
+        selectedTextId = t.uid;
+        renderTextBoxPanel();
+        renderTextList();
+        renderTextBoxes();
+      });
+      dom.textListBody.appendChild(tr);
+    });
+  }
+
+  /** 計算統計表需要的資料，包含每列與總計。 */
+  function computeSummaryData() {
+    const rows = [];
+    const totals = {
+      acid: 0,
+      base: 0,
+      voc: 0,
+      heat: 0,
+      dust: 0,
+    };
+    state.points.forEach((p, idx) => {
+      const per = {
+        acid: Number(p.acid) || 0,
+        base: Number(p.base) || 0,
+        voc: Number(p.voc) || 0,
+        heat: Number(p.heat) || 0,
+        dust: Number(p.dust) || 0,
+      };
+      let machines = Number(p.machines);
+      if (!machines || machines <= 0) machines = 1;
+      const rowTotals = {
+        acid: per.acid * machines,
+        base: per.base * machines,
+        voc: per.voc * machines,
+        heat: per.heat * machines,
+        dust: per.dust * machines,
+      };
+      totals.acid += rowTotals.acid;
+      totals.base += rowTotals.base;
+      totals.voc += rowTotals.voc;
+      totals.heat += rowTotals.heat;
+      totals.dust += rowTotals.dust;
+      rows.push({
+        point: p,
+        uid: p.uid,
+        label: p.id || idx + 1,
+        per,
+        machines,
+        totals: rowTotals,
+      });
+    });
+    if (state.summarySortById) {
+      rows.sort((a, b) => {
+        const aKey = getSortKey(a.label);
+        const bKey = getSortKey(b.label);
+        if (typeof aKey === "number" && typeof bKey === "number") {
+          return aKey - bKey;
+        }
+        const aStr = String(aKey);
+        const bStr = String(bKey);
+        if (aStr === bStr) return 0;
+        return aStr > bStr ? 1 : -1;
+      });
+    }
+    return { rows, totals };
+  }
+
   /** 渲染統計表（可編輯）並回傳總量。 */
   function renderSummary() {
     dom.summaryBody.innerHTML = "";
-    let totalAcid = 0;
-    let totalBase = 0;
-    let totalVoc = 0;
-    let totalHeat = 0;
-    let totalDust = 0;
-    state.points.forEach((p, idx) => {
-      const perAcid = Number(p.acid) || 0;
-      const perBase = Number(p.base) || 0;
-      const perVoc = Number(p.voc) || 0;
-      const perHeat = Number(p.heat) || 0;
-      const perDust = Number(p.dust) || 0;
-      let count = Number(p.machines);
-      if (!count || count <= 0) count = 1;
-      const sumAcid = perAcid * count;
-      const sumBase = perBase * count;
-      const sumVoc = perVoc * count;
-      const sumHeat = perHeat * count;
-      const sumDust = perDust * count;
-      totalAcid += sumAcid;
-      totalBase += sumBase;
-      totalVoc += sumVoc;
-      totalHeat += sumHeat;
-      totalDust += sumDust;
+    const { rows, totals } = computeSummaryData();
+    rows.forEach((row) => {
+      const p = row.point;
       const tr = document.createElement("tr");
 
       const idCell = document.createElement("td");
-      idCell.textContent = p.id || idx + 1;
+      idCell.textContent = row.label;
       tr.appendChild(idCell);
 
       const perFields = ["acid", "base", "voc", "heat", "dust"];
       perFields.forEach((field) => {
         const td = document.createElement("td");
         const input = document.createElement("input");
-        input.type = "number";
-        input.min = "0";
-        input.step = "1";
+        input.type = "text";
+        input.inputMode = "decimal";
         input.value = p[field] || "";
         input.dataset.uid = p.uid;
         input.dataset.field = field;
         input.addEventListener("input", () => {
-          const value = input.value === "" ? 0 : Number(input.value);
-          p[field] = Number.isNaN(value) ? 0 : value;
+          p[field] = input.value;
           const caret = input.selectionStart;
           renderAll();
           restoreSummaryFocus(p.uid, field, caret);
@@ -537,16 +828,13 @@
 
       const machinesTd = document.createElement("td");
       const machinesInput = document.createElement("input");
-      machinesInput.type = "number";
-      machinesInput.min = "0";
-      machinesInput.step = "1";
+      machinesInput.type = "text";
+      machinesInput.inputMode = "decimal";
       machinesInput.value = p.machines || 1;
       machinesInput.dataset.uid = p.uid;
       machinesInput.dataset.field = "machines";
       machinesInput.addEventListener("input", () => {
-        const value =
-          machinesInput.value === "" ? 1 : Number(machinesInput.value);
-        p.machines = Number.isNaN(value) ? 0 : value;
+        p.machines = machinesInput.value;
         const caret = machinesInput.selectionStart;
         renderAll();
         restoreSummaryFocus(p.uid, "machines", caret);
@@ -555,16 +843,16 @@
       tr.appendChild(machinesTd);
 
       const totalCells = [
-        sumAcid || "",
-        sumBase || "",
-        sumVoc || "",
-        sumHeat || "",
-        sumDust || "",
+        formatOneDecimal(row.totals.acid),
+        formatOneDecimal(row.totals.base),
+        formatOneDecimal(row.totals.voc),
+        formatOneDecimal(row.totals.heat),
+        formatOneDecimal(row.totals.dust),
       ];
       totalCells.forEach((c) => {
         const td = document.createElement("td");
         td.textContent = c;
-        if (!c) td.classList.add("zero-cell");
+        if (!c || Number(c) === 0) td.classList.add("zero-cell");
         tr.appendChild(td);
       });
 
@@ -579,11 +867,11 @@
       "",
       "",
       "",
-      totalAcid || "",
-      totalBase || "",
-      totalVoc || "",
-      totalHeat || "",
-      totalDust || "",
+      formatOneDecimal(totals.acid, false, true),
+      formatOneDecimal(totals.base, false, true),
+      formatOneDecimal(totals.voc, false, true),
+      formatOneDecimal(totals.heat, false, true),
+      formatOneDecimal(totals.dust, false, true),
     ];
     totalCells.forEach((c, i) => {
       const td = document.createElement("td");
@@ -596,11 +884,11 @@
     });
     dom.summaryBody.appendChild(totalTr);
     return {
-      totalAcid,
-      totalBase,
-      totalVoc,
-      totalHeat,
-      totalDust,
+      totalAcid: totals.acid,
+      totalBase: totals.base,
+      totalVoc: totals.voc,
+      totalHeat: totals.heat,
+      totalDust: totals.dust,
     };
   }
 
@@ -659,21 +947,31 @@
     if (!dom.totalsWidget) return;
     dom.totalsWidget.innerHTML = `
       <div class="totals-title">總量</div>
-      <div class="totals-row"><span class="flow-chip flow-acid">酸</span> ${
-        totals.totalAcid || 0
-      }</div>
-      <div class="totals-row"><span class="flow-chip flow-base">鹼</span> ${
-        totals.totalBase || 0
-      }</div>
-      <div class="totals-row"><span class="flow-chip flow-voc">有機</span> ${
-        totals.totalVoc || 0
-      }</div>
-      <div class="totals-row"><span class="flow-chip flow-heat">熱</span> ${
-        totals.totalHeat || 0
-      }</div>
-      <div class="totals-row"><span class="flow-chip flow-dust">集塵</span> ${
-        totals.totalDust || 0
-      }</div>
+      <div class="totals-row"><span class="flow-chip flow-acid">酸</span> ${formatOneDecimal(
+        totals.totalAcid,
+        false,
+        true
+      )}</div>
+      <div class="totals-row"><span class="flow-chip flow-base">鹼</span> ${formatOneDecimal(
+        totals.totalBase,
+        false,
+        true
+      )}</div>
+      <div class="totals-row"><span class="flow-chip flow-voc">有機</span> ${formatOneDecimal(
+        totals.totalVoc,
+        false,
+        true
+      )}</div>
+      <div class="totals-row"><span class="flow-chip flow-heat">熱</span> ${formatOneDecimal(
+        totals.totalHeat,
+        false,
+        true
+      )}</div>
+      <div class="totals-row"><span class="flow-chip flow-dust">集塵</span> ${formatOneDecimal(
+        totals.totalDust,
+        false,
+        true
+      )}</div>
       <div class="totals-note">（灰色代表風量或總量為 0）</div>
     `;
     const { x, y } = state.totalsPosition;
@@ -683,6 +981,8 @@
 
   // 總量浮窗拖曳
   (() => {
+    const enableTotalsDrag = true;
+    if (!enableTotalsDrag) return;
     let dragging = false;
     let offsetX = 0;
     let offsetY = 0;
@@ -696,14 +996,14 @@
     });
     window.addEventListener("mousemove", (e) => {
       if (!dragging) return;
-      const wrapperRect = dom.imageWrapper.getBoundingClientRect();
+      const targetRect = dom.backgroundImage.getBoundingClientRect();
       const newX = clamp(
-        (e.clientX - wrapperRect.left - offsetX) / wrapperRect.width,
+        (e.clientX - targetRect.left - offsetX) / targetRect.width,
         0,
         1
       );
       const newY = clamp(
-        (e.clientY - wrapperRect.top - offsetY) / wrapperRect.height,
+        (e.clientY - targetRect.top - offsetY) / targetRect.height,
         0,
         1
       );
@@ -716,26 +1016,35 @@
     });
   })();
 
-  /** 匯出目前版面為 PNG。 */
+  /** 匯出目前版面為 JPG，並附上畫面總量框。 */
   function exportImage() {
     if (!state.backgroundDataUrl || !state.imageWidth || !state.imageHeight) {
       alert("請先載入底圖後再匯出圖檔。");
       return;
     }
+    const summaryData = computeSummaryData();
     const canvas = document.createElement("canvas");
     canvas.width = state.imageWidth;
     canvas.height = state.imageHeight;
     const ctx = canvas.getContext("2d");
     const img = new Image();
     img.onload = () => {
+      // 背景鋪白，避免 JPG 透明區變黑
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const baseWidth = state.imageWidth;
+      const baseHeight = state.imageHeight;
+
       ctx.save();
       ctx.globalAlpha = state.opacity;
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, baseWidth, baseHeight);
       ctx.restore();
 
+      const scale = state.pointSize / 22;
       state.points.forEach((p, idx) => {
-        const px = p.x * canvas.width;
-        const py = p.y * canvas.height;
+        const px = p.x * baseWidth;
+        const py = p.y * baseHeight;
         const pointRadius = (state.pointSize / 22) * 11;
         const machineCount = p.machines && p.machines > 1 ? p.machines : 1;
 
@@ -772,20 +1081,32 @@
         flows.forEach(({ field, color }) => {
           const val = Number(p[field]) || 0;
           if (!val) return;
-          const total =
-            machineCount > 1
-              ? `${val}×${machineCount}台=${val * machineCount}`
-              : `${val}`;
-          chipTexts.push({ text: total, color });
-        });
+      const baseText = formatOneDecimal(val, false, true);
+      const totalValue = val * machineCount;
+      const totalText =
+        machineCount > 1
+          ? `${baseText}×${machineCount}台=${formatOneDecimal(
+              totalValue,
+              false,
+              true
+            )}`
+          : baseText;
+      chipTexts.push({ text: totalText, color });
+    });
         if (chipTexts.length) {
-          const lineHeight = 14;
-          const chipPaddingX = 4;
-          const chipPaddingY = 2;
-          const chipGap = 4;
+          const lineHeight = 14 * scale;
+          const chipPaddingX = 4 * scale;
+          const chipPaddingY = 2 * scale;
+          const chipGap = 4 * scale;
           const chipHeight = lineHeight + chipPaddingY * 2;
-          let startY = py + pointRadius + 8;
+          const marginDom = p.flowDirection === "column" ? 16 * scale : 20 * scale;
+          let startY =
+            p.flowDirection === "column"
+              ? py + marginDom
+              : py - chipHeight / 2 + marginDom;
+          const chipFont = `${Math.max(10, 12 * scale)}px sans-serif`;
           chipTexts.forEach((chip, i) => {
+            ctx.font = chipFont;
             const textWidth = ctx.measureText(chip.text).width;
             const chipWidth = textWidth + chipPaddingX * 2;
             const drawY =
@@ -810,7 +1131,7 @@
 
             ctx.save();
             ctx.fillStyle = "#000";
-            ctx.font = "12px sans-serif";
+            ctx.font = chipFont;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             ctx.fillText(
@@ -823,13 +1144,120 @@
         }
       });
 
-      const url = canvas.toDataURL("image/png");
+      state.textBoxes.forEach((t) => {
+        const tx = t.x * baseWidth;
+        const ty = t.y * baseHeight;
+        const fontSize = t.fontSize || 16;
+        ctx.save();
+        ctx.font = `${fontSize}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const lines = String(t.text || "").split(/\n/);
+        const lineHeight = fontSize * 1.2;
+        const boxWidth = Math.max(
+          ...lines.map((ln) => ctx.measureText(ln).width),
+          30
+        );
+        const boxHeight = lines.length * lineHeight + 8;
+        const boxX = tx - boxWidth / 2 - 8;
+        const boxY = ty - boxHeight / 2;
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.strokeStyle = "#cbd5e1";
+        ctx.lineWidth = 1;
+        roundRect(ctx, boxX, boxY, boxWidth + 16, boxHeight, 4);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = t.color || "#111";
+        lines.forEach((ln, i) => {
+          ctx.fillText(
+            ln,
+            tx,
+            boxY + 4 + lineHeight / 2 + i * lineHeight
+          );
+        });
+        ctx.restore();
+      });
+
+      drawTotalsOverlay(ctx, summaryData.totals, canvas.width, canvas.height);
+
+      const url = canvas.toDataURL("image/jpeg", 0.92);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "factory-layout.png";
+      a.download = "factory-layout.jpg";
       a.click();
     };
     img.src = state.backgroundDataUrl;
+  }
+
+  function drawTotalsOverlay(ctx, totals, canvasWidth, canvasHeight) {
+    const scale = state.pointSize / 22;
+    const boxWidth = 180 * scale;
+    const lineHeight = 18 * scale;
+    const lines = [
+      { label: "酸", value: totals.acid, cls: "flow-acid", color: "#8bc34a" },
+      { label: "鹼", value: totals.base, cls: "flow-base", color: "#60a5fa" },
+      { label: "有機", value: totals.voc, cls: "flow-voc", color: "#f4b183" },
+      { label: "熱", value: totals.heat, cls: "flow-heat", color: "#f9a8d4" },
+      { label: "集塵", value: totals.dust, cls: "flow-dust", color: "#bfdbfe" },
+    ];
+    const padding = 10 * scale;
+    const headerHeight = 22 * scale;
+    const totalHeight = headerHeight + lines.length * lineHeight + padding * 2;
+    const posX = state.totalsPosition.x * canvasWidth;
+    const posY = state.totalsPosition.y * canvasHeight;
+    const boxX = clamp(posX - boxWidth / 2, 0, canvasWidth - boxWidth);
+    const boxY = clamp(posY - totalHeight / 2, 0, canvasHeight - totalHeight);
+
+    ctx.save();
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.strokeStyle = "#94a3b8";
+    ctx.lineWidth = 1;
+    roundRect(ctx, boxX, boxY, boxWidth, totalHeight, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#111";
+    ctx.font = `${Math.max(10, 13 * scale)}px sans-serif`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("總量", boxX + padding, boxY + padding + headerHeight / 2);
+
+    ctx.font = `${Math.max(10, 12 * scale)}px sans-serif`;
+    lines.forEach((line, idx) => {
+      const y = boxY + padding + headerHeight + idx * lineHeight + lineHeight / 2;
+      ctx.fillStyle = line.color;
+      const chipH = 14 * scale;
+      const chipW = 28 * scale;
+      ctx.fillRect(boxX + padding, y - chipH / 2, chipW, chipH);
+      ctx.fillStyle = "#000";
+      ctx.fillText(line.label, boxX + padding + chipW + 6 * scale, y);
+      ctx.textAlign = "right";
+      ctx.fillText(
+        formatOneDecimal(line.value, false, true),
+        boxX + boxWidth - padding,
+        y
+      );
+      ctx.textAlign = "left";
+    });
+    ctx.restore();
+  }
+
+  function getSortKey(label) {
+    const num = Number(label);
+    if (Number.isFinite(num)) return num;
+    return String(label || "");
+  }
+
+  function formatOneDecimal(value, allowBlankZero = false, alwaysZero = false) {
+    const digits =
+      typeof state.decimalPlaces === "number" && state.decimalPlaces >= 0
+        ? Math.min(3, Math.max(0, Math.round(state.decimalPlaces)))
+        : 1;
+    const num = Number(value);
+    if (!Number.isFinite(num)) return allowBlankZero ? "" : (0).toFixed(digits);
+    if (num === 0 && allowBlankZero && !alwaysZero) return "";
+    if (digits > 0 && Number.isInteger(num)) return String(num);
+    return num.toFixed(digits);
   }
 
   function roundRect(ctx, x, y, w, h, r) {
