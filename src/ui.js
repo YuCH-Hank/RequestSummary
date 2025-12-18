@@ -342,18 +342,16 @@
 
   /** 匯出/匯入 JSON 與匯出 JPG。 */
   function bindPersistence() {
-    dom.exportBtn.addEventListener("click", () => {
+    dom.exportBtn.addEventListener("click", async () => {
       if (!state.backgroundDataUrl) {
         if (!confirm("尚未載入底圖，仍要匯出嗎？")) return;
       }
       const data = JSON.stringify(state, null, 2);
       const blob = new Blob([data], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "factory-layout.drawio.json";
-      a.click();
-      URL.revokeObjectURL(url);
+      const saved = await saveWithPicker(blob, "factory-layout.drawio.json", "application/json");
+      if (!saved) {
+        downloadFallback(blob, "factory-layout.drawio.json");
+      }
     });
 
     dom.exportImageBtn.addEventListener("click", () => {
@@ -1180,13 +1178,58 @@
 
       drawTotalsOverlay(ctx, summaryData.totals, canvas.width, canvas.height);
 
-      const url = canvas.toDataURL("image/jpeg", 0.92);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "factory-layout.jpg";
-      a.click();
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const saved = await saveWithPicker(blob, "factory-layout.jpg", "image/jpeg");
+        if (!saved) {
+          downloadFallback(blob, "factory-layout.jpg");
+        }
+      }, "image/jpeg", 0.92);
     };
     img.src = state.backgroundDataUrl;
+  }
+
+  /**
+   * 優先使用 File System Access API 讓使用者自選儲存位置，失敗時回傳 false。
+   * @param {Blob} blob 匯出內容。
+   * @param {string} suggestedName 預設檔名。
+   * @param {string} mimeType MIME 類型。
+   */
+  async function saveWithPicker(blob, suggestedName, mimeType) {
+    try {
+      if (!window.showSaveFilePicker) return false;
+      const ext = suggestedName.includes(".")
+        ? suggestedName.slice(suggestedName.lastIndexOf("."))
+        : "";
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [
+          {
+            description: suggestedName,
+            accept: {
+              [mimeType]: ext ? [ext] : [],
+            },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return true;
+    } catch (err) {
+      console.warn("saveWithPicker fallback:", err);
+      return false;
+    }
+  }
+
+  /** 下載備援：以隱藏連結觸發瀏覽器預設下載。 */
+  function downloadFallback(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   function drawTotalsOverlay(ctx, totals, canvasWidth, canvasHeight) {

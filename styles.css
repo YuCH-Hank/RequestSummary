@@ -142,7 +142,7 @@ main {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: calc(12px * var(--flow-scale));
   font-weight: 600;
   cursor: pointer;
   transform: translate(-50%, -50%);
@@ -163,7 +163,7 @@ main {
   border-radius: 4px;
   background: transparent;
   color: #111827;
-  font-size: 11px;
+  font-size: calc(12px * var(--flow-scale));
   pointer-events: none;
   white-space: nowrap;
   max-width: 260px;
@@ -184,7 +184,7 @@ main {
   border-radius: 4px;
   color: #000;
   opacity: 1;
-  border: none;
+  border: 1px solid rgba(17, 24, 39, 0.4);
   text-align: center;
 }
 
@@ -432,5 +432,4 @@ input[type="number"] {
 
 
 
-
 
